@@ -16,6 +16,7 @@
 #define PACKET_SIZE ETH_PLEN + ARP_PLEN
 #define BUFSIZE 1024*8	// 8Byte
 
+#pragma pack(1)
 struct arpheader {
 	uint16_t	hd_type;			/* format of hardware address */
 	uint16_t	pro_type;			/* format of protocol address */
@@ -26,7 +27,8 @@ struct arpheader {
 	uint32_t	sender_pro_addr;		/* sender protocol address */
 	uint8_t		target_hd_addr[MAC_ALEN];	/* target hardware address */
 	uint32_t	target_pro_addr;		/* target protocol address */
-}__attribute__((packed));
+};
+#pragma (pop)
 
 void usage(){
 	printf("Usage	: arp_spoof [dev] [victim_ip] [target_ip]\n");
