@@ -1,12 +1,12 @@
-all : arp_spoof
+all : send_arp
 
-arp_spoof: arp_spoof.o
-	g++ -g -o arp_spoof arp_spoof.o -lpcap
+send_arp: send_arp.o
+	g++ -g -o send_arp send_arp.o -lpcap
 	rm -rf *.o
 
-arp_spoof.o:
-	g++ -g -c -o arp_spoof.o main.cpp
+send_arp.o:
+	g++ -g -c -o send_arp.o main.cpp
 
 clean:
-	rm -f arp_spoof
+	rm -f send_arp
 	rm -f *.o
